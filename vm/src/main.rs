@@ -1,4 +1,8 @@
-use h8bit_vm::memory::{DynMem, MemoryMapper, RamArray};
+use h8bit_vm::{
+    cpu::operation::*,
+    cpu::Cpu,
+    memory::{DynMem, MemoryMapper, RamArray},
+};
 
 fn main() {
     // create memory
@@ -12,10 +16,16 @@ fn main() {
     mem_map.add_device(boot_mem, 0, 0xff);
 
     // create cpu
+    let mut cpu = Cpu::new(mem_map).expect("valid CPU");
+    println!("{}", cpu);
+    cpu.display_memory_at(0);
 
     // run
+    cpu.run();
+    println!("{}", cpu);
+    cpu.display_memory_at(0);
 }
 
 fn boot_rom() -> Vec<u8> {
-    vec![]
+    vec![nop::CODE, hlt::CODE]
 }
