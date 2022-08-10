@@ -1,7 +1,8 @@
 use h8bit_vm::{
-    cpu::operation::*,
     cpu::Cpu,
+    cpu::{operation::*, Register, WideRegister},
     memory::{DynMem, MemoryMapper, RamArray},
+    util::high_and_low_value,
 };
 
 fn main() {
@@ -23,9 +24,28 @@ fn main() {
     // run
     cpu.run();
     println!("{}", cpu);
-    cpu.display_memory_at(0);
+    cpu.display_memory_at(0x01f0);
 }
 
 fn boot_rom() -> Vec<u8> {
-    vec![nop::CODE, hlt::CODE]
+    let addr = 0x01f0;
+    let (addr_high, addr_low) = high_and_low_value(addr);
+    [
+        vec![
+            mov::lit_reg_wide::CODE,
+            addr_high,
+            addr_low,
+            WideRegister::CD.into(),
+        ],
+        vec![mov::lit_mem::CODE, 0xab, addr_high, addr_low],
+        vec![
+            mov::reg_ptr_reg::CODE,
+            WideRegister::CD.into(),
+            Register::A.into(),
+        ],
+        vec![hlt::CODE],
+    ]
+    .into_iter()
+    .flatten()
+    .collect()
 }

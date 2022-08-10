@@ -3,6 +3,7 @@ use std::fmt;
 use strum_macros::{FromRepr, IntoStaticStr};
 
 pub mod hlt;
+pub mod mov;
 pub mod nop;
 
 #[derive(Debug, PartialEq, Copy, Clone, FromRepr, IntoStaticStr)]
@@ -13,6 +14,33 @@ pub enum Operation {
 
     /// Halt
     Hlt = hlt::CODE,
+
+    /// Move literal to register
+    MovLitReg = mov::lit_reg::CODE,
+
+    /// Move wide literal to wide register
+    MovLitRegWide = mov::lit_reg_wide::CODE,
+
+    /// Move register to register
+    MovRegReg = mov::reg_reg::CODE,
+
+    /// Move register to memory
+    MovRegMem = mov::reg_mem::CODE,
+
+    /// Move memory to register
+    MovMemReg = mov::mem_reg::CODE,
+
+    /// Move literal to memory
+    MovLitMem = mov::lit_mem::CODE,
+
+    /// Move wide literal to memory
+    MovLitMemWide = mov::lit_mem_wide::CODE,
+
+    /// Move value at memory[wide register] to register
+    MovRegPtrReg = mov::reg_ptr_reg::CODE,
+
+    /// Move value at memory[wide literal + wide register] to register
+    MovLitOffReg = mov::lit_off_reg::CODE,
 }
 
 impl Operation {
@@ -20,6 +48,15 @@ impl Operation {
         match self {
             Operation::Nop => nop::run(cpu),
             Operation::Hlt => hlt::run(cpu),
+            Operation::MovLitReg => mov::lit_reg::run(cpu),
+            Operation::MovLitRegWide => mov::lit_reg_wide::run(cpu),
+            Operation::MovRegReg => mov::reg_reg::run(cpu),
+            Operation::MovRegMem => mov::reg_mem::run(cpu),
+            Operation::MovMemReg => mov::mem_reg::run(cpu),
+            Operation::MovLitMem => mov::lit_mem::run(cpu),
+            Operation::MovLitMemWide => mov::lit_mem_wide::run(cpu),
+            Operation::MovRegPtrReg => mov::reg_ptr_reg::run(cpu),
+            Operation::MovLitOffReg => mov::lit_off_reg::run(cpu),
         }
     }
 
