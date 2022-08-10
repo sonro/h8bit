@@ -2,3 +2,12 @@
 name = "h8bit-vm"
 version = "0.1.0"
 edition = "2021"
+
+[dependencies]
+strum = "0.24"
+strum_macros = "0.24"
+thiserror = "1.0.32"
+custom_debug = "0.5.0"
+
+[dev-dependencies]
+paste = "1.0.8"
