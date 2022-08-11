@@ -11,10 +11,12 @@ mod register;
 #[cfg(test)]
 mod tests;
 
+const PC: WideRegister = WideRegister::PC;
+#[allow(dead_code)]
+const SP: WideRegister = WideRegister::SP;
+
 #[derive(Debug)]
 pub struct Cpu {
-    pc: u16,
-    sp: u16,
     registers: RegisterState,
     memory: MemoryMapper,
 }
@@ -23,12 +25,13 @@ impl Cpu {
     pub fn new(mem_map: MemoryMapper) -> Result<Self, Error> {
         let pc = mem_map.start().ok_or(Error::NoMemory)?;
         let sp = mem_map.end().ok_or(Error::NoMemory)?;
-        Ok(Self {
+        let mut cpu = Self {
             registers: RegisterState::new(),
-            pc,
-            sp,
             memory: mem_map,
-        })
+        };
+        cpu.registers.set_wide(WideRegister::PC, pc);
+        cpu.registers.set_wide(WideRegister::SP, sp);
+        Ok(cpu)
     }
 
     pub fn display_memory_at(&self, addr: u16) {
@@ -55,17 +58,15 @@ impl Cpu {
     }
 
     fn fetch(&mut self) -> Result<u8, Error> {
-        let addr = self.pc;
-        let value = self.memory.get(addr)?;
-        self.pc += 1;
-        Ok(value)
+        let addr = self.registers.get_wide(PC);
+        self.registers.set_wide(PC, addr + 1);
+        Ok(self.memory.get(addr)?)
     }
 
     fn fetch_wide(&mut self) -> Result<u16, Error> {
-        let addr = self.pc;
-        let value = self.memory.get_wide(addr)?;
-        self.pc += 2;
-        Ok(value)
+        let addr = self.registers.get_wide(PC);
+        self.registers.set_wide(PC, addr + 2);
+        Ok(self.memory.get_wide(addr)?)
     }
 
     fn fetch_register(&mut self) -> Result<Register, Error> {
@@ -110,10 +111,6 @@ impl From<DeviceError> for Error {
 
 impl fmt::Display for Cpu {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "CPU\n pc: {:#06x}\n sp: {:#06x}\n{}",
-            self.pc, self.sp, self.registers
-        )
+        write!(f, "CPU\n{}", self.registers)
     }
 }

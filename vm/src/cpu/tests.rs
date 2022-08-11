@@ -185,7 +185,7 @@ pub fn assert_cpu_state(cpu: &Cpu, expected: &TestCpuState) {
     assert_mem(cpu, expected.memory.as_ref());
 }
 
-const TEST_DEVICE_SIZE: u16 = 0xffff;
+const TEST_DEVICE_SIZE: u16 = 0xfffe;
 
 fn create_bootstraped_cpu(program: &[u8], mem_size: u16) -> Cpu {
     let mut device = TestDevice::new(mem_size);
@@ -203,22 +203,24 @@ fn create_cpu_with_boot_only(program: &[u8]) -> Cpu {
 
 fn assert_pc(cpu: &Cpu, pc: Option<u16>) {
     if let Some(pc) = pc {
+        let actual = cpu.registers.get_wide(PC);
         assert_eq!(
             pc,
-            cpu.pc,
+            actual,
             "{}",
-            assertion_msg_wide("Program Counter", pc, cpu.pc)
+            assertion_msg_wide("Program Counter", pc, actual)
         );
     }
 }
 
 fn assert_sp(cpu: &Cpu, sp: Option<u16>) {
     if let Some(sp) = sp {
+        let actual = cpu.registers.get_wide(SP);
         assert_eq!(
             sp,
-            cpu.sp,
+            actual,
             "{}",
-            assertion_msg_wide("Stack Pointer", sp, cpu.sp)
+            assertion_msg_wide("Stack Pointer", sp, actual)
         );
     }
 }

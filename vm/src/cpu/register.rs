@@ -1,14 +1,13 @@
 use crate::util::{high_and_low_value, wide_value};
 use std::fmt::{self, Write};
-use strum_macros::{FromRepr, IntoStaticStr};
-
-const NUM_REG: usize = 8;
+use strum::IntoEnumIterator;
+use strum_macros::{EnumIter, FromRepr, IntoStaticStr};
 
 #[derive(Debug, thiserror::Error)]
 #[error("No register at address: {0:#04x}")]
 pub struct InvalidRegister(u8);
 
-#[derive(Debug, Clone, Copy, PartialEq, FromRepr, IntoStaticStr, PartialOrd, Ord, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, FromRepr, IntoStaticStr, PartialOrd, Ord, Eq, EnumIter)]
 #[repr(u8)]
 pub enum Register {
     A = 1,
@@ -19,6 +18,7 @@ pub enum Register {
     F,
     G,
     H,
+    MB,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, FromRepr, IntoStaticStr)]
@@ -28,16 +28,30 @@ pub enum WideRegister {
     CD = 0x34,
     EF = 0x56,
     GH = 0x78,
+    PC = 0xF0,
+    SP = 0xF1,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum AnyRegister {
     Std(Register),
     Wide(WideRegister),
 }
 
-#[derive(Debug, Default)]
-pub struct RegisterState([u8; NUM_REG]);
+#[derive(Debug, Default, PartialEq)]
+pub struct RegisterState {
+    a: u8,
+    b: u8,
+    c: u8,
+    d: u8,
+    e: u8,
+    f: u8,
+    g: u8,
+    h: u8,
+    mb: u8,
+    pc: u16,
+    sp: u16,
+}
 
 impl RegisterState {
     pub fn new() -> Self {
@@ -45,27 +59,57 @@ impl RegisterState {
     }
 
     pub fn set(&mut self, reg: Register, value: u8) {
-        let addr = reg as usize - 1;
-        self.0[addr] = value;
+        match reg {
+            Register::A => self.a = value,
+            Register::B => self.b = value,
+            Register::C => self.c = value,
+            Register::D => self.d = value,
+            Register::E => self.e = value,
+            Register::F => self.f = value,
+            Register::G => self.g = value,
+            Register::H => self.h = value,
+            Register::MB => self.mb = value,
+        }
     }
 
     pub fn get(&self, reg: Register) -> u8 {
-        let addr = reg as usize - 1;
-        self.0[addr]
+        match reg {
+            Register::A => self.a,
+            Register::B => self.b,
+            Register::C => self.c,
+            Register::D => self.d,
+            Register::E => self.e,
+            Register::F => self.f,
+            Register::G => self.g,
+            Register::H => self.h,
+            Register::MB => self.mb,
+        }
     }
 
     pub fn set_wide(&mut self, wide_reg: WideRegister, value: u16) {
-        let (high_val, low_val) = high_and_low_value(value);
-        let (high_reg, low_reg) = wide_reg.high_and_low();
-        self.set(high_reg, high_val);
-        self.set(low_reg, low_val);
+        match wide_reg {
+            WideRegister::PC => self.pc = value,
+            WideRegister::SP => self.sp = value,
+            _ => {
+                let (high_val, low_val) = high_and_low_value(value);
+                let (high_reg, low_reg) = wide_reg.high_and_low();
+                self.set(high_reg, high_val);
+                self.set(low_reg, low_val);
+            }
+        }
     }
 
     pub fn get_wide(&self, wide_reg: WideRegister) -> u16 {
-        let (high_reg, low_reg) = wide_reg.high_and_low();
-        let high_val = self.get(high_reg);
-        let low_val = self.get(low_reg);
-        wide_value(high_val, low_val)
+        match wide_reg {
+            WideRegister::PC => self.pc,
+            WideRegister::SP => self.sp,
+            _ => {
+                let (high_reg, low_reg) = wide_reg.high_and_low();
+                let high_val = self.get(high_reg);
+                let low_val = self.get(low_reg);
+                wide_value(high_val, low_val)
+            }
+        }
     }
 }
 
@@ -94,6 +138,7 @@ impl WideRegister {
             WideRegister::CD => (Register::C, Register::D),
             WideRegister::EF => (Register::E, Register::F),
             WideRegister::GH => (Register::G, Register::H),
+            _ => panic!(""),
         }
     }
 }
@@ -163,12 +208,13 @@ impl fmt::Display for WideRegister {
 
 impl fmt::Display for RegisterState {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut output = String::with_capacity(128);
-        for i in 1..=NUM_REG {
-            let reg_name = Register::try_from(i as u8).expect("valid address");
-            let reg_value = self.0[i - 1];
-            writeln!(&mut output, "  {}: {:#04x}", reg_name, reg_value).expect("format register");
+        let mut output = String::with_capacity(256);
+        for reg in Register::iter() {
+            writeln!(&mut output, "  {}:   {:#04x}", reg, self.get(reg)).expect("format register")
         }
+        let wide_fmt = |wide_reg| format!("  {}:   {:#06x}", wide_reg, self.get_wide(wide_reg));
+        output += &wide_fmt(WideRegister::PC);
+        output += &wide_fmt(WideRegister::SP);
         output.fmt(f)
     }
 }
@@ -178,15 +224,25 @@ pub mod tests {
     use super::*;
     use crate::cpu::Error;
 
+    const NUM_REG: usize = 11;
+
     #[test]
     fn register_state_init() {
         let reg_state = RegisterState::new();
-        let expected: [u8; 8] = [0; 8];
-        for (i, &x) in expected.iter().enumerate() {
-            assert_eq!(x, reg_state.0[i]);
-            let reg = Register::try_from(i as u8 + 1).expect("valid address");
-            assert_eq!(x, reg_state.get(reg));
-        }
+        let expected = RegisterState {
+            a: 0,
+            b: 0,
+            c: 0,
+            d: 0,
+            e: 0,
+            f: 0,
+            g: 0,
+            h: 0,
+            mb: 0,
+            pc: 0,
+            sp: 0,
+        };
+        assert_eq!(expected, reg_state);
     }
 
     #[test]
@@ -244,45 +300,67 @@ pub mod tests {
     }
 
     #[test]
-    fn register_from_u8() {
+    fn any_register_from_u8() {
         let addr_reg = addr_name_reg_map();
         for (addr, _, expected_reg) in addr_reg {
-            let actual = Register::try_from(addr).expect("valid address");
+            let actual = AnyRegister::try_from(addr).expect("valid address");
             assert_eq!(expected_reg, actual);
         }
     }
 
     #[test]
+    fn any_register_from_u8_error() {
+        let addr = 0x00;
+        let err = AnyRegister::try_from(addr).expect_err("valid address");
+        assert_invalid_register(err, addr);
+    }
+
+    #[test]
+    fn register_from_u8() {
+        let addr_reg = addr_name_reg_map();
+        for (addr, _, reg) in addr_reg {
+            if let AnyRegister::Std(reg) = reg {
+                let actual = Register::try_from(addr).expect("valid address");
+                assert_eq!(reg, actual);
+            }
+        }
+    }
+
+    #[test]
     fn register_from_u8_error() {
-        let addr = NUM_REG as u8 + 1;
+        let addr = 0x00;
         let err = Register::try_from(addr).expect_err("invalid address");
-        assert!(matches!(err, InvalidRegister(_)));
-        let InvalidRegister(x) = err;
-        assert_eq!(addr, x);
+        assert_invalid_register(err, addr);
     }
 
     #[test]
     fn u8_from_register() {
         let addr_reg = addr_name_reg_map();
         for (expected_addr, _, reg) in addr_reg {
-            assert_eq!(expected_addr, u8::from(reg));
+            if let AnyRegister::Std(reg) = reg {
+                assert_eq!(expected_addr, u8::from(reg));
+            }
         }
     }
 
     #[test]
     fn name_from_register() {
-        let name_reg = addr_name_reg_map();
-        for (_, expected_name, reg) in name_reg {
-            assert_eq!(expected_name, reg.to_string());
+        let addr_reg = addr_name_reg_map();
+        for (_, name, reg) in addr_reg {
+            if let AnyRegister::Std(reg) = reg {
+                assert_eq!(name, reg.to_string());
+            }
         }
     }
 
     #[test]
     fn wide_register_from_u8() {
-        let addr_reg = addr_name_wide_map();
-        for (addr, _, expected_reg) in addr_reg {
-            let expected = WideRegister::try_from(addr).expect("valid address");
-            assert_eq!(expected_reg, expected);
+        let addr_reg = addr_name_reg_map();
+        for (addr, _, reg) in addr_reg {
+            if let AnyRegister::Wide(reg) = reg {
+                let actual = WideRegister::try_from(addr).expect("valid address");
+                assert_eq!(reg, actual);
+            }
         }
     }
 
@@ -290,24 +368,26 @@ pub mod tests {
     fn wide_register_from_u8_error() {
         let addr = 0x00;
         let err = WideRegister::try_from(addr).expect_err("invalid address");
-        assert!(matches!(err, InvalidRegister(_)));
-        let InvalidRegister(x) = err;
-        assert_eq!(addr, x);
+        assert_invalid_register(err, addr);
     }
 
     #[test]
     fn u8_from_wide_register() {
-        let addr_reg = addr_name_wide_map();
+        let addr_reg = addr_name_reg_map();
         for (expected_addr, _, reg) in addr_reg {
-            assert_eq!(expected_addr, u8::from(reg));
+            if let AnyRegister::Wide(reg) = reg {
+                assert_eq!(expected_addr, u8::from(reg));
+            }
         }
     }
 
     #[test]
     fn name_from_wide_register() {
-        let name_reg = addr_name_wide_map();
-        for (_, expected_name, reg) in name_reg {
-            assert_eq!(expected_name, reg.to_string());
+        let addr_reg = addr_name_reg_map();
+        for (_, name, reg) in addr_reg {
+            if let AnyRegister::Wide(reg) = reg {
+                assert_eq!(name, reg.to_string());
+            }
         }
     }
 
@@ -325,47 +405,42 @@ pub mod tests {
         assert!(matches!(any, AnyRegister::Wide(WideRegister::AB)));
     }
 
-    #[test]
-    fn any_register_from_u8_error() {
-        let addr = 0xAB;
-        let err = AnyRegister::try_from(addr).expect_err("invalid address");
-        assert!(matches!(err, InvalidRegister(_)));
-        let InvalidRegister(x) = err;
-        assert_eq!(addr, x);
-    }
-
     pub fn assert_cpu_error_is_invalid_register(err: Error, expected: u8) {
-        assert!(matches!(err, Error::InvalidRegister(_)));
-        if let Error::InvalidRegister(InvalidRegister(actual)) = err {
-            assert_eq!(
-                expected, actual,
-                "\nexpected incorrect reg_addr: {:#04x}, got {:#04x}",
-                expected, actual
-            );
+        match err {
+            Error::InvalidRegister(err) => assert_invalid_register(err, expected),
+            err => panic!("expected InvalidRegister, got {:?}", err),
         }
     }
 
-    fn addr_name_reg_map() -> [(u8, &'static str, Register); NUM_REG] {
-        use Register::*;
-        [
-            (1, "A", A),
-            (2, "B", B),
-            (3, "C", C),
-            (4, "D", D),
-            (5, "E", E),
-            (6, "F", F),
-            (7, "G", G),
-            (8, "H", H),
-        ]
+    fn assert_invalid_register(err: InvalidRegister, expected: u8) {
+        let InvalidRegister(actual) = err;
+        assert_eq!(
+            expected, actual,
+            "\nexpected incorrect reg_addr: {:#04x}, got {:#04x}",
+            expected, actual
+        );
     }
 
-    fn addr_name_wide_map() -> [(u8, &'static str, WideRegister); NUM_REG / 2] {
+    fn addr_name_reg_map() -> [(u8, &'static str, AnyRegister); NUM_REG + 4] {
+        use AnyRegister::*;
+        use Register::*;
         use WideRegister::*;
         [
-            (0x12, "AB", AB),
-            (0x34, "CD", CD),
-            (0x56, "EF", EF),
-            (0x78, "GH", GH),
+            (1, "A", Std(A)),
+            (2, "B", Std(B)),
+            (3, "C", Std(C)),
+            (4, "D", Std(D)),
+            (5, "E", Std(E)),
+            (6, "F", Std(F)),
+            (7, "G", Std(G)),
+            (8, "H", Std(H)),
+            (9, "MB", Std(MB)),
+            (0x12, "AB", Wide(AB)),
+            (0x34, "CD", Wide(CD)),
+            (0x56, "EF", Wide(EF)),
+            (0x78, "GH", Wide(GH)),
+            (0xF0, "PC", Wide(PC)),
+            (0xF1, "SP", Wide(SP)),
         ]
     }
 }
